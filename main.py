@@ -6,17 +6,17 @@ from dateutil import parser
 import requests, bs4
 import urllib.parse as urlparse
 from datetime import datetime as dt
-from typing import List
+from typing import List, Dict
 from dataclasses import dataclass, InitVar, field
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 SCOPES: List[str] = ['https://www.googleapis.com/auth/calendar']
-# CREDENTIAL_INFO: Dict[str, str] = json.loads(os.environ.get('CREDENTIAL_INFO'))
+CREDENTIAL_INFO: Dict[str, str] = json.loads(os.environ.get('CREDENTIAL_INFO'))
 # ローカルテスト用
-with open('credential.json') as f:
-    CREDENTIAL_INFO = json.load(f)
+# with open('credential.json') as f:
+#     CREDENTIAL_INFO = json.load(f)
 API_CREDENTIAL = service_account.Credentials.from_service_account_info(CREDENTIAL_INFO, scopes=SCOPES)
 API_SERVICE = build('calendar', 'v3', credentials=API_CREDENTIAL, cache_discovery=False)
 CALENDAR_ID: str = 's1c5d19mg7bo08h10ucio8uni8@group.calendar.google.com'
