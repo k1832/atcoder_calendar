@@ -1,0 +1,24 @@
+name: Update calendar
+on:
+  push:
+    branches:
+      - action
+    # schedule:
+    # - cron:  '*/10 * * * *'
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      CALENDAR_TYPE: ${{ secrets.CALENDAR_TYPE }}
+      CREDENTIAL_INFO: ${{ secrets.CREDENTIAL_INFO }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip' # caching pip dependencies
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Update calendar
+        run: python3 main.py
