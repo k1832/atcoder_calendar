@@ -17,6 +17,7 @@ SCOPES: List[str] = ['https://www.googleapis.com/auth/calendar']
 
 CREDENTIAL_INFO: Dict[str, str] = {}
 CALENDAR_TYPE: Final[str] = 'ABC' if os.environ.get('CALENDAR_TYPE') == 'ABC' else 'ALL'
+print(f"Calendar type: {CALENDAR_TYPE}")
 
 if os.environ.get('ENV') == 'local':
     # ローカルでテスト
