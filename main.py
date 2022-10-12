@@ -394,10 +394,9 @@ def main(data, context):
 
     batch.execute()
 
-    print("done")
-
     print(f"{updated_count} contests have been updated.")
     print(f"{inserted_count} contests have been added.")
+    print("done")
 
 if __name__ == '__main__':
     main('', '')
