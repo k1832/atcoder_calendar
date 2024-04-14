@@ -61,7 +61,7 @@ ATCODER_BASE_URL: str = 'https://atcoder.jp/'
 
 @dataclass
 class TimeWithStrTimeZone:
-    time: datetime.datetime
+    time: datetime.datetime # Timezone aware
     time_zone: str = 'Japan'
 
     def get_as_obj(self):
@@ -83,10 +83,10 @@ class TimeWithStrTimeZone:
 @dataclass
 class CalendarEvent:
     summary: str
-    created_at: datetime.datetime
-    updated_at: datetime.datetime
-    start_at: InitVar[datetime.datetime]
-    end_at: InitVar[datetime.datetime]
+    created_at: datetime.datetime # UTC
+    updated_at: datetime.datetime # UTC
+    start_at: InitVar[datetime.datetime] # Timezone aware
+    end_at: InitVar[datetime.datetime] # Timezone aware
     url: str
     start_at_with_time_zone: TimeWithStrTimeZone = field(init=False)
     end_at_with_timw_zone: TimeWithStrTimeZone = field(init=False)
@@ -132,6 +132,17 @@ class CalendarEvent:
             'end': self.end_at_with_timw_zone.get_as_obj()
         }
 
+    def starts_before(self, time: datetime.datetime) -> bool:
+        """Check if the event starts before the time
+
+        Args:
+            time (datetime.datetime): Timezone aware time
+
+        Returns:
+            bool: Whether or not the event starts before the time
+        """
+        return self.start_at_with_time_zone.time < time
+
     def is_abc(self) -> bool:
         return ABC_PATTERN.search(self.url) is not None
 
@@ -153,7 +164,7 @@ class CalendarEvent:
 
     @classmethod
     def parse_text_obj_to_calendarevent(
-            cls, name_obj, start_datetime_obj, duration_obj, now: datetime.datetime
+            cls, name_obj, start_datetime_obj, duration_obj, utc_now: datetime.datetime
         ) -> "CalendarEvent":
         """
         :param name_obj: Object, which contains name and url of the contest, obtained from html
@@ -161,20 +172,21 @@ class CalendarEvent:
         :param duration_obj:
             Object, which contains duration time (1:30 as one hour and 30 minutes),
             obtained from html
-        :param now: The time this program started
+        :param utc_now: The time this program started
         :returns: Parsed Calendar Event
         """
         contest_title: str = name_obj.text
         contest_url: str = urlparse.urljoin(ATCODER_BASE_URL, name_obj.attrs['href'])
-        start_at: datetime.datetime = dt.strptime(start_datetime_obj.text, '%Y-%m-%d %H:%M:%S+0900')
+        # Timezone aware datetime object (%z: timezone offset)
+        start_at: datetime.datetime = dt.strptime(start_datetime_obj.text, '%Y-%m-%d %H:%M:%S%z')
         contest_hours, contest_minutes = map(int, duration_obj.text.split(':'))
         contest_duration: datetime.timedelta = datetime.timedelta(hours=contest_hours,
                                                                   minutes=contest_minutes)
         end_at: datetime.datetime = start_at + contest_duration
         return CalendarEvent(
             summary=contest_title,
-            created_at=now,
-            updated_at=now,
+            created_at=utc_now,
+            updated_at=utc_now,
             start_at=start_at,
             end_at=end_at,
             url=contest_url
@@ -211,7 +223,7 @@ def utc_to_jst_str(time: datetime.datetime) -> str:
     return f"{(time + datetime.timedelta(hours=9)).strftime('%Y/%m/%d %H:%M:%S')} JST"
 
 
-def get_atcoder_schedule(now: datetime.datetime) -> List[CalendarEvent]:
+def get_atcoder_schedule(utc_now: datetime.datetime) -> List[CalendarEvent]:
     res = requests.get(urlparse.urljoin(ATCODER_BASE_URL, "contests/?lang=ja"), timeout=10)
     res.raise_for_status()
     soup = bs4.BeautifulSoup(res.content, 'html.parser')
@@ -227,7 +239,7 @@ def get_atcoder_schedule(now: datetime.datetime) -> List[CalendarEvent]:
         sys.exit(1)
 
     event_list = [
-        CalendarEvent.parse_text_obj_to_calendarevent(nobj, sobj, dobj, now)
+        CalendarEvent.parse_text_obj_to_calendarevent(nobj, sobj, dobj, utc_now)
         for nobj, sobj, dobj in zip(name_objs, start_datetime_objs, duration_objs)
     ]
 
@@ -235,6 +247,14 @@ def get_atcoder_schedule(now: datetime.datetime) -> List[CalendarEvent]:
 
 # pylint: disable=invalid-name
 def parse_datetime(t: str) -> datetime.datetime:
+    """Get timezone aware datetime object from string
+
+    Args:
+        t (str): Timestamp in string (with timezone offset %z)
+
+    Returns:
+        datetime.datetime: Timezone aware datetime object
+    """
     try:
         return datetime.datetime.strptime(t, "%Y-%m-%dT%H:%M:%S%z")
     except ValueError:
@@ -250,8 +270,8 @@ def get_registered_events(
         # pylint: disable=no-member
         events = API_SERVICE.events().list(
             calendarId=CALENDAR_ID,
-            timeMin=f"{time_from.isoformat()}Z",
-            timeMax=f"{time_to.isoformat()}Z",
+            timeMin=f"{time_from.isoformat(timespec='seconds')}",
+            timeMax=f"{time_to.isoformat(timespec='seconds')}",
             pageToken=page_token
         ).execute()
         registered_events += [
@@ -327,13 +347,13 @@ def add_event(event: CalendarEvent, batch: Union[BatchHttpRequest, None] = None)
     API_SERVICE.events().insert(calendarId=CALENDAR_ID, body=event.get_as_obj()).execute()
 
 # TODO(k1832): WIP. Refactor this.
-def delete_all_events():
-    now = datetime.datetime.utcnow()
-    eight_week_later = now + datetime.timedelta(weeks=8)
+def delete_all_within_three_years():
+    utc_now = datetime.datetime.now(datetime.UTC)
+    three_years_later = utc_now + datetime.timedelta(days=365*3)
     batch = API_SERVICE.new_batch_http_request()
 
     offset = 0
-    events_to_delete = get_registered_events(now, eight_week_later)
+    events_to_delete = get_registered_events(utc_now, three_years_later)
 
     ONE_BATCH_LIMIT = 995
 
@@ -349,28 +369,39 @@ def delete_all_events():
         batch.execute()
         offset = end
 
-# These are needed in Cloud Functions
+# `data` and `context` are passed by Cloud Functions and not used.
 # pylint: disable=unused-argument
 def main(data, context):
-    now = datetime.datetime.utcnow()
-    upcoming_contests: List[CalendarEvent] = get_atcoder_schedule(now)
+    utc_now = datetime.datetime.now(datetime.UTC)
+    upcoming_contests: List[CalendarEvent] = get_atcoder_schedule(utc_now)
     print(f"{len(upcoming_contests)} contests have been retrieved.")
-    eight_week_later = now + datetime.timedelta(weeks=8)
 
     if not upcoming_contests:
         print("There is no upcoming contests.")
         sys.exit()
 
-    updated_count = 0
-    inserted_count = 0
+    # Google Calendar events: From: now, To: 2 years later
+    # AtCoder events: From: now, To: Unlimited (as long as it's on the first page?)
 
-    registered_events: List[CalendarEvent] = get_registered_events(now, eight_week_later)
+    # Therefore, we need to ignore AtCoder events that are older than
+    # certain time (365 days for now) to avoid the duplicate events
+    atcoder_event_ignore_threashold = utc_now + datetime.timedelta(days=365)
+    two_year_later = utc_now + datetime.timedelta(days=365*2) # 2 years
+
+
+    # Get registered events within 2 years from Google Calendar
+    registered_events: List[CalendarEvent] = get_registered_events(utc_now, two_year_later)
     summary_to_registered, url_to_registered = get_registered_events_dict(registered_events)
+
 
     # pylint: disable=no-member
     batch = API_SERVICE.new_batch_http_request()
 
+    updated_count = 0
+    inserted_count = 0
     for upcoming in upcoming_contests:
+        if not upcoming.starts_before(atcoder_event_ignore_threashold):
+            continue
         if CALENDAR_TYPE == 'ABC' and not upcoming.is_abc():
             continue
 
