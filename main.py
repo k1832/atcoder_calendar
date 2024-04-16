@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import datetime
+import pytz
 import urllib.parse as urlparse
 from datetime import datetime as dt
 from typing import Final, List, Dict, Tuple, Union
@@ -101,14 +102,13 @@ class CalendarEvent:
         """
         :returns: Description formatted for Google Calendar
         """
-        created_at_jst_str: Final[str] = utc_to_jst_str(self.created_at)
-        updated_at_jst_str: Final[str] = utc_to_jst_str(self.updated_at)
+        created_at_jst_str: Final[str] = get_jst_str(self.created_at)
+        updated_at_jst_str: Final[str] = get_jst_str(self.updated_at)
         return f"created at: {created_at_jst_str}\nlast modified at: {updated_at_jst_str}"
 
     def get_as_obj(self) -> dict:
         """
-        :returns: Dictionary formatted for Google Calendar API
-        以下のような形で返す
+        :returns: Dictionary formatted for Google Calendar API like below
         {
             'summary': 'ABC001',
             'location': 'https://atcoder.jp/contests/abc001',
@@ -216,11 +216,16 @@ class CalendarEvent:
         return True
 
 
-def utc_to_jst_str(time: datetime.datetime) -> str:
+def get_jst_str(time: datetime.datetime) -> str:
+    """Get JST formatted string from timezone aware datetime object
+
+    Args:
+        time: Timezone aware datetime object
+
+    Returns:
+        str: JST formatted string
     """
-    :returns: Time converted to JST as string
-    """
-    return f"{(time + datetime.timedelta(hours=9)).strftime('%Y/%m/%d %H:%M:%S')} JST"
+    return time.astimezone(pytz.timezone("Asia/Tokyo")).strftime('%Y/%m/%d %H:%M:%S JST')
 
 
 def get_atcoder_schedule(utc_now: datetime.datetime) -> List[CalendarEvent]:
